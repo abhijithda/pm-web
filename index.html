@@ -1,45 +1,56 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>pm-web — Plugin Manager UI</title>
+  <title>Plugin Manager</title>
   <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
   <header>
-    <h1>pm-web — Plugin Manager UI</h1>
-    <p>Add plugin definitions and watch simulated execution progress.</p>
+    <div class="header-left"></div>
+    <div class="header-center">
+      <h1>Plugin Manager [PM]</h1>
+    </div>
+    <div class="header-right"></div>
   </header>
-  
-  <!-- Demo / Samples (moved above import controls) -->
-  <div class="samples-row">
-    <label for="sample-select" style="font-weight:600;margin-right:8px;color:var(--muted)">Demo</label>
-    <select id="sample-select" class="sample-select">
-      <option value="">— choose —</option>
-      <option value="prereboot">Prereboot (JSON)</option>
-      <option value="preupgrade">Preupgrade (YAML)</option>
-    </select>
-  </div>
-
-  <!-- Import toolbar: URL and file; preview controls are on a separate line below -->
-  <div class="import-toolbar">
-    <input id="import-url" type="url" placeholder="https://raw.githubusercontent.com/.../plugins.json" class="import-url-input">
-    <input type="file" id="import-file" accept=".json,.yaml,.yml" class="import-file-input">
-    <button id="import-from-url-btn" type="button">Import</button>
-  </div>
-
-  <div class="preview-row">
-    <button id="preview-btn" type="button">View Details</button>
-  </div>
-
-  <!-- Collapsible preview panel shown above Plugins list -->
-  <div id="global-preview" class="global-preview" style="display:none">
-    <div class="import-preview" id="import-preview" aria-live="polite"></div>
-  </div>
 
   <main>
-    <section class="form-section">
+    <section class="import-plugins-section">
+      <h2>Import Plugins</h2>
+      <!-- Import toolbar: Profile, URL and file (vertical) with Load action -->
+      <div class="import-toolbar">
+        <div class="import-row">
+          <label style="font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Profile:</label>
+          <select id="sample-select" class="sample-select">
+            <option value="" selected disabled hidden>Select Profile</option>
+            <option value="prereboot">Prereboot (JSON)</option>
+            <option value="preupgrade">Preupgrade (YAML)</option>
+          </select>
+          <!-- Toast container for notifications (move outside import toolbar for global visibility) -->
+          <div id="toast-container" style="position:fixed;top:24px;right:24px;z-index:9999;pointer-events:none"></div>
+        </div>
+
+        <div class="import-row">
+          <label style="font-weight:600;color:var(--muted);display:block;margin-bottom:6px">URL:</label>
+          <input id="import-url" type="url" placeholder="https://raw.githubusercontent.com/.../plugins.json"
+            class="import-url-input">
+        </div>
+
+        <div class="import-row">
+          <label style="font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Browse file:</label>
+          <input type="file" id="import-file" accept=".json,.yaml,.yml" class="import-file-input">
+        </div>
+
+        <div class="import-row" style="margin-top:8px">
+          <button id="load-btn" type="button">Load</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="add-plugin-section">
       <h2>Add Plugin</h2>
       <form id="plugin-form">
         <label>Plugin Name<input id="name" required></label>
@@ -51,27 +62,35 @@
           <button type="button" id="clear-form">Clear</button>
         </div>
       </form>
-      <div class="manual-entry">
-        <label style="display:block;margin-top:12px;color:var(--muted);font-size:13px">Or paste plugin list (JSON or YAML)</label>
-        <textarea id="manual-text" placeholder='[ { "name":"...", "command":"..." } ]' rows="8" style="width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.02);color:inherit"></textarea>
-      </div>
-      
-
-      <div class="import-export">
-        <button id="start-all">Start All</button>
-        <button id="clear-all" type="button">Clear All</button>
-        <button id="stop-all">Stop All</button>
-        <button id="export">Export JSON</button>
-        <button id="export-yaml">Export YAML</button>
-        
-      </div>
-    </section>
-
-    <section class="list-section">
-      <h2>Plugins</h2>
-      <div id="plugins"></div>
     </section>
   </main>
+
+  <!-- Preview / edit panel shown above Plugins list -->
+  <div id="global-preview" class="global-preview" role="region" aria-labelledby="preview-title">
+    <div class="preview-header">
+      <h3 id="preview-title">Details</h3>
+    </div>
+    <div class="import-preview">
+      <div id="manual-editor"
+        style="width:100%;height:320px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.02);">
+      </div>
+    </div>
+  </div>
+
+  <!-- Action bar (List, Run, Export, Save) placed under the editor per mockup -->
+  <div class="bottom-actions">
+    <button id="action-list-btn">List</button>
+    <button id="start-all">Run</button>
+    <button id="export">Export (JSON/YAML)</button>
+    <button id="save-profile">Save (TODO)</button>
+  </div>
+
+
+
+  <div>
+    <h2>Plugins</h2>
+    <div id="plugins"></div>
+  </div>
 
   <footer>
     <small>This is a frontend-only demo that simulates plugin execution for the plugin-manager.</small>
@@ -79,6 +98,11 @@
 
   <!-- YAML support for importing/exporting plugin lists -->
   <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+  <!-- Ace editor for the Plugin Details area -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.15.0/ace.js"
+    integrity="sha512-0F3o6xw6o+GJz0g6g9i7v3FQg2FvQ2bWw6g1d6d5Pm7iF9h1xKk1q1FfZ3p2Msd9cG2mL6O7i7Qd1p3z8a9L1w=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="app.js"></script>
 </body>
+
 </html>

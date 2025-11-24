@@ -1,6 +1,6 @@
-# A web interface for Plugin Manager (PM)
+# A Web UI for Plugin Manager (PM)
 
-A web interface for Plugin Manager https://github.com/abhijithda/plugin-manager.
+A web interface for the Plugin Manager (PM) https://github.com/abhijithda/plugin-manager.
 
 The UI accepts the plugin information that contains the plugin name, description, command to execute and any dependencies.
 

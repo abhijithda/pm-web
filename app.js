@@ -1,8 +1,17 @@
+  // Toast utility
+  function showToast(msg, type = 'info', timeout = 2500) {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.textContent = msg;
+    toast.style.cssText = `background:${type==='error'?'#ef4444':'#323b4a'};color:#fff;padding:10px 18px;margin-bottom:10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-size:15px;pointer-events:auto;opacity:0.97;`;
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0.2'; setTimeout(() => container.removeChild(toast), 400); }, timeout);
+  }
 (() => {
   const pluginsEl = document.getElementById('plugins');
   const form = document.getElementById('plugin-form');
   const startAllBtn = document.getElementById('start-all');
-  const stopAllBtn = document.getElementById('stop-all');
   const exportBtn = document.getElementById('export');
   const importFile = document.getElementById('import-file');
   const clearFormBtn = document.getElementById('clear-form');
@@ -251,18 +260,66 @@
 
   clearFormBtn.addEventListener('click', ()=>form.reset());
   startAllBtn.addEventListener('click', startAll);
-  stopAllBtn.addEventListener('click', stopAll);
   exportBtn.addEventListener('click', exportJSON);
   const exportYamlBtn = document.getElementById('export-yaml');
   if(exportYamlBtn) exportYamlBtn.addEventListener('click', exportYAML);
   importFile.addEventListener('change', e => { if(e.target.files[0]) importJSONorYAML(e.target.files[0]); e.target.value=''; });
 
   const importUrlInput = document.getElementById('import-url');
-  const previewBtn = document.getElementById('preview-btn');
-  const importFromUrlBtn = document.getElementById('import-from-url-btn');
-  const manualText = document.getElementById('manual-text');
+  const importFromPreviewBtn = document.getElementById('import-from-preview-btn');
+  const loadBtn = document.getElementById('load-btn');
+  const manualEditorEl = document.getElementById('manual-editor');
+  let editor = null;
   const importFileInput = document.getElementById('import-file');
   const sampleSelect = document.getElementById('sample-select');
+  const actionListBtn = document.getElementById('action-list-btn');
+  const saveProfileBtn = document.getElementById('save-profile');
+
+  // Initialize Ace editor if available, and re-init if needed
+  function ensureEditor() {
+    if (!editor && window.ace && manualEditorEl) {
+      editor = ace.edit('manual-editor');
+      editor.setTheme('ace/theme/textmate');
+      editor.session.setMode('ace/mode/json');
+      editor.setOptions({wrap:true,tabSize:2,useWorker:false});
+      editor.setShowPrintMargin(false);
+      editor.setValue('', -1);
+    }
+    return editor;
+  }
+  ensureEditor();
+
+  // Unified setter/getter for the details editor with fallback when Ace isn't available
+  function setEditorContent(text, mode) {
+    // pretty-mode: 'json' | 'yaml' | 'text'
+    try {
+      ensureEditor();
+      if (editor) {
+        if (mode === 'yaml') editor.session.setMode('ace/mode/yaml');
+        else if (mode === 'json') editor.session.setMode('ace/mode/json');
+        else editor.session.setMode('ace/mode/text');
+        editor.setValue(text || '', -1);
+        editor.clearSelection();
+        return;
+      }
+    } catch (e) {
+      console.warn('Error setting Ace editor content', e);
+    }
+    // Fallback: dump into the manualEditorEl as preformatted text
+    if (manualEditorEl) {
+      manualEditorEl.textContent = text || '';
+      manualEditorEl.style.whiteSpace = 'pre-wrap';
+      manualEditorEl.style.fontFamily = 'monospace';
+    }
+  }
+
+  function getEditorContent() {
+    try {
+      if (editor && editor.getValue) return editor.getValue();
+    } catch (e) { /* ignore */ }
+    if (manualEditorEl) return manualEditorEl.textContent || '';
+    return '';
+  }
 
   async function fetchAndImport(url){
     if(!url){ alert('Please provide a URL'); return; }
@@ -298,99 +355,74 @@
   }
 
   async function fetchAndPreview(url){
-    const previewEl = document.getElementById('import-preview');
-    previewEl.innerHTML = '';
-    if(!url){ alert('Please provide a URL'); return; }
+    if(!url){ return; }
     url = rewriteGitHubUrl(url);
     console.info('Preview fetch URL:', url);
     try{
       const res = await fetch(url);
-      if(!res.ok) { alert('Failed to fetch URL: ' + res.status + ' ' + res.statusText); return; }
+      if(!res.ok) { console.warn('Failed to fetch URL: ' + res.status + ' ' + res.statusText); return; }
       const ctype = (res.headers.get('content-type')||'').toLowerCase();
       const text = await res.text();
-      let arr;
       const lower = url.split('?')[0].toLowerCase();
-      if(lower.endsWith('.yaml') || lower.endsWith('.yml') || ctype.includes('yaml')){
-        if(typeof jsyaml === 'undefined'){ alert('YAML support not available'); return; }
-        arr = jsyaml.load(text);
-      } else if(lower.endsWith('.json') || ctype.includes('json')){
-        arr = JSON.parse(text);
-      } else {
-        try{ arr = JSON.parse(text); }
-        catch(_){ if(typeof jsyaml === 'undefined'){ alert('Unable to parse content and YAML support not available'); return; } arr = jsyaml.load(text); }
-      }
-      const list = extractPluginArray(arr);
-      if(!list){ alert('Remote document did not contain a plugin array'); return; }
-      // render preview (populate content; do not change panel visibility)
-      list.forEach((it,idx)=>{
-        const norm = normalizePlugin(it);
-        const itemEl = document.createElement('div'); itemEl.className='item';
-        const nameEl = document.createElement('div'); nameEl.className='name'; nameEl.textContent = norm.name || '(no name)';
-        const rawEl = document.createElement('div'); rawEl.className='raw'; rawEl.textContent = JSON.stringify(it,null,2);
-        itemEl.appendChild(nameEl); itemEl.appendChild(rawEl); previewEl.appendChild(itemEl);
-      });
-    }catch(err){ console.error(err); alert('Error previewing URL (CORS or network issue). See console for details.'); }
+      // Populate the editable textarea so the user can tweak before import
+      // set editor mode and populate the editor
+      try{
+          if((lower.endsWith('.yaml') || lower.endsWith('.yml')) || ctype.includes('yaml')){
+            if(typeof jsyaml !== 'undefined'){
+              try{ const doc = jsyaml.load(text); setEditorContent(jsyaml.dump(doc), 'yaml'); return; }catch(_){ setEditorContent(text, 'yaml'); return; }
+            }
+            setEditorContent(text, 'yaml'); return;
+          }
+          // try JSON
+          try{ const parsed = JSON.parse(text); setEditorContent(JSON.stringify(parsed, null, 2), 'json'); return; }
+          catch(_){
+            if(typeof jsyaml !== 'undefined'){
+              try{ const doc = jsyaml.load(text); setEditorContent(jsyaml.dump(doc), 'yaml'); return; }catch(_2){ setEditorContent(text, 'text'); return; }
+            }
+            setEditorContent(text, 'text'); return;
+          }
+        } catch(err){ console.error('Error populating editor', err); }
+      } catch(err){ console.error(err); /* silent on background preview errors */ }
   }
 
-  // Unified preview: manual text > selected file > URL
+  // Unified preview -> now populates the editable `manualText` textarea. Priority: URL > file > manualText (no-op)
   async function previewCommon(){
-    const previewEl = document.getElementById('import-preview');
-    previewEl.innerHTML='';
+    // if manualText already has content and there is no external source, do nothing
+    const url = importUrlInput && importUrlInput.value && importUrlInput.value.trim();
+    if(url){ await fetchAndPreview(url); return; }
 
-    return new Promise(async (resolve, reject) => {
-      const text = (manualText && manualText.value && manualText.value.trim()) || null;
-      if(text){
-        try{
-          let doc;
-          try{ doc = JSON.parse(text); }
-          catch(_){ if(typeof jsyaml === 'undefined') throw new Error('YAML support not available'); doc = jsyaml.load(text); }
-          const list = extractPluginArray(doc);
-          if(!list) { alert('Pasted document did not contain a plugin array'); return reject(new Error('no-plugin-array')); }
-          // populate preview content (do not auto-show the preview panel)
-          list.forEach(it => { const norm = normalizePlugin(it); const itemEl = document.createElement('div'); itemEl.className='item'; const nameEl = document.createElement('div'); nameEl.className='name'; nameEl.textContent = norm.name || '(no name)'; const rawEl = document.createElement('div'); rawEl.className='raw'; rawEl.textContent = JSON.stringify(it,null,2); itemEl.appendChild(nameEl); itemEl.appendChild(rawEl); previewEl.appendChild(itemEl); });
-          return resolve();
-        }catch(err){ console.error(err); alert('Failed to parse pasted text'); return reject(err); }
-      }
-
-      // next: file input
-      if(importFileInput && importFileInput.files && importFileInput.files[0]){
-        const file = importFileInput.files[0];
+    if(importFileInput && importFileInput.files && importFileInput.files[0]){
+      const file = importFileInput.files[0];
+      return new Promise((resolve,reject)=>{
         const reader = new FileReader();
         reader.onload = e => {
+          const text = e.target.result;
+          // try to pretty format JSON/YAML when possible
+          const name = (file.name||'').toLowerCase();
           try{
-            const text = e.target.result;
-            let doc;
-            const name = (file.name||'').toLowerCase();
-            if(name.endsWith('.yaml')||name.endsWith('.yml')){ if(typeof jsyaml==='undefined'){ alert('YAML support not available'); return reject(new Error('yaml-unavailable')); } doc = jsyaml.load(text); }
-            else { try{ doc = JSON.parse(text); } catch(_){ if(typeof jsyaml==='undefined'){ alert('YAML support not available'); return reject(new Error('yaml-unavailable')); } doc = jsyaml.load(text); } }
-            const list = extractPluginArray(doc);
-            if(!list){ alert('File did not contain a plugin array'); return reject(new Error('no-plugin-array')); }
-            // populate preview content (do not auto-show the preview panel)
-            list.forEach(it => { const norm = normalizePlugin(it); const itemEl = document.createElement('div'); itemEl.className='item'; const nameEl = document.createElement('div'); nameEl.className='name'; nameEl.textContent = norm.name || '(no name)'; const rawEl = document.createElement('div'); rawEl.className='raw'; rawEl.textContent = JSON.stringify(it,null,2); itemEl.appendChild(nameEl); itemEl.appendChild(rawEl); previewEl.appendChild(itemEl); });
-            return resolve();
-          }catch(err){ console.error(err); alert('Failed to parse file'); return reject(err); }
+            if(name.endsWith('.yaml')||name.endsWith('.yml')){
+              if(typeof jsyaml !== 'undefined'){
+                const doc = jsyaml.load(text); setEditorContent(jsyaml.dump(doc), 'yaml'); return resolve();
+              }
+              setEditorContent(text, 'yaml'); return resolve();
+            }
+            try{ const parsed = JSON.parse(text); setEditorContent(JSON.stringify(parsed,null,2), 'json'); return resolve(); }
+            catch(_){ if(typeof jsyaml !== 'undefined'){ const doc = jsyaml.load(text); setEditorContent(jsyaml.dump(doc), 'yaml'); return resolve(); } setEditorContent(text, 'text'); return resolve(); }
+          }catch(err){ console.error(err); setEditorContent(text, 'text'); return resolve(); }
         };
-        reader.onerror = e => { console.error(e); alert('Failed to read file'); return reject(e); };
+        reader.onerror = e => { console.error(e); return reject(e); };
         reader.readAsText(file);
-        return;
-      }
+      });
+    }
 
-      // finally: URL
-      const url = importUrlInput && importUrlInput.value && importUrlInput.value.trim();
-      if(url){
-        try{
-          await fetchAndPreview(url);
-          return resolve();
-        }catch(err){ return reject(err); }
-      }
-      alert('Provide pasted text, select a file, or enter a URL to preview');
-      return reject(new Error('no-source'));
-    });
+    // no external source: nothing to do (user can edit textarea directly)
+    return;
   }
 
   async function importCommon(){
-    // priority: manual text > file > url
-    const text = (manualText && manualText.value && manualText.value.trim()) || null;
+    // priority: editor content > file > url
+    const editorText = (editor && editor.getValue && editor.getValue().trim()) || null;
+    const text = editorText || null;
     if(text){
       try{ let doc; try{ doc = JSON.parse(text); } catch(_){ if(typeof jsyaml==='undefined') throw new Error('YAML support not available'); doc = jsyaml.load(text); } const list = extractPluginArray(doc); if(!list){ alert('Pasted document did not contain a plugin array'); return; } list.forEach(it => addPlugin(normalizePlugin(it))); return; }catch(err){ console.error(err); alert('Failed to parse pasted text'); return; }
     }
@@ -400,49 +432,126 @@
     alert('Provide pasted text, select a file, or enter a URL to import');
   }
 
-  // View Details toggles visibility of the preview panel. Try a silent background preview first (no alerts).
-  if(previewBtn) previewBtn.addEventListener('click', async ()=>{
-    const globalPreview = document.getElementById('global-preview');
-    if(!globalPreview) return;
-    // run the background auto-preview function (which won't show alert when no source)
-    try{ await autoPreviewIfPossible(); }catch(_){}
-    // toggle panel visibility
-    const isOpen = globalPreview.style.display === 'block';
-    if(isOpen){ globalPreview.style.display = 'none'; previewBtn.textContent = 'View Details'; }
-    else { globalPreview.style.display = 'block'; previewBtn.textContent = 'Hide Details'; }
-  });
-  if(importFromUrlBtn) importFromUrlBtn.addEventListener('click', async ()=>{
-    try{
-      await previewCommon();
-    }catch(e){
-      // preview failed or no source; still ask user if they want to continue
-      if(!confirm('Preview failed or unavailable. Continue with import?')) return;
+  // Load button: populate the editable details editor from the selected input (Profile/URL/File)
+  if(loadBtn) loadBtn.addEventListener('click', async ()=>{
+    try {
+      ensureEditor();
+      // Priority: Profile (sample) > URL > File
+      const sampleKey = sampleSelect && sampleSelect.value;
+      if (sampleKey && sampleKey !== '') {
+        const url = getSampleUrl(sampleKey);
+        if (importUrlInput) importUrlInput.value = url || '';
+        await fetchAndPreview(url);
+        if(editor) editor.focus();
+        showToast('Loaded sample profile.', 'info');
+        return;
+      }
+      const url = importUrlInput && importUrlInput.value && importUrlInput.value.trim();
+      if (url) {
+        await fetchAndPreview(url);
+        if(editor) editor.focus();
+        showToast('Loaded from URL.', 'info');
+        return;
+      }
+      if(importFileInput && importFileInput.files && importFileInput.files[0]) {
+        const file = importFileInput.files[0];
+        const reader = new FileReader();
+        reader.onload = e => {
+          ensureEditor();
+          const text = e.target.result;
+          try {
+            if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) {
+              if (typeof jsyaml !== 'undefined') {
+                const doc = jsyaml.load(text);
+                setEditorContent(jsyaml.dump(doc), 'yaml');
+                showToast('Loaded YAML file.', 'info');
+                return;
+              }
+              setEditorContent(text, 'yaml');
+              showToast('Loaded YAML file.', 'info');
+              return;
+            }
+            try {
+              const parsed = JSON.parse(text);
+              setEditorContent(JSON.stringify(parsed, null, 2), 'json');
+              showToast('Loaded JSON file.', 'info');
+              return;
+            } catch (_) {
+              if (typeof jsyaml !== 'undefined') {
+                const doc = jsyaml.load(text);
+                setEditorContent(jsyaml.dump(doc), 'yaml');
+                showToast('Loaded YAML file.', 'info');
+                return;
+              }
+              setEditorContent(text, 'text');
+              showToast('Loaded file.', 'info');
+              return;
+            }
+          } catch (err) {
+            console.error(err);
+            showToast('Failed to load file.', 'error');
+          }
+        };
+        reader.onerror = e => { console.error(e); showToast('Failed to read file.', 'error'); };
+        reader.readAsText(file);
+        return;
+      }
+      showToast('No input selected.', 'error');
+    } catch (err) {
+      console.error('Load failed', err);
+      showToast('Load failed — see console for details', 'error');
     }
-    importCommon();
   });
-  // removed Show Preview toggle — preview panel is shown when user clicks Preview
+
+  // Note: top toolbar has no 'List' button; use the preview panel 'List' button to import.
+
+  // Import from the preview panel: read the editable textarea and import
+  if(importFromPreviewBtn) importFromPreviewBtn.addEventListener('click', async ()=>{
+    try{
+      // Ensure previewCommon has populated the textarea from URL/file before importing
+      await previewCommon();
+      await importCommon();
+    }catch(err){ console.error('Import from preview failed', err); alert('Import failed — see console for details'); }
+  });
+
+  // Bottom action 'List' should trigger the same import behavior (preview then import)
+  if(actionListBtn){
+    actionListBtn.addEventListener('click', async ()=>{
+      try{
+        await previewCommon();
+        await importCommon();
+        showToast('Plugins imported!', 'info');
+      }catch(err){ console.error('List action failed', err); showToast('List failed — see console for details', 'error'); }
+    });
+  }
+
+  if(saveProfileBtn){
+    saveProfileBtn.addEventListener('click', ()=>{
+      alert('Save profile not implemented yet');
+    });
+  }
+
+  // No preview toggle: details editor is always visible and editable.
   // removed old "clear sample" control; provide a small helper to clear inputs if needed
   function clearImportInputs(){
-    if(manualText) manualText.value = '';
+    if(editor) editor.setValue('');
     if(importFileInput) importFileInput.value = '';
     if(importUrlInput) importUrlInput.value = '';
     const importPreview = document.getElementById('import-preview'); if(importPreview) { importPreview.style.display='none'; importPreview.innerHTML=''; }
   }
 
-  // Auto-update preview when import sources change (does not auto-show the preview panel)
+  // Auto-update the editable textarea when import sources change (URL/file/sample). Do not overwrite user edits typed into the textarea.
   function debounce(fn, wait){ let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), wait); }; }
 
-  function hasSource(){
-    if(manualText && manualText.value && manualText.value.trim()) return true;
+  function hasExternalSource(){
     if(importFileInput && importFileInput.files && importFileInput.files[0]) return true;
     if(importUrlInput && importUrlInput.value && importUrlInput.value.trim()) return true;
     return false;
   }
 
   async function autoPreviewIfPossible(){
-    if(!hasSource()){
-      // nothing to preview: clear preview content
-      const previewEl = document.getElementById('import-preview'); if(previewEl) previewEl.innerHTML = '';
+    if(!hasExternalSource()){
+      // nothing external to preview
       return;
     }
     try{ await previewCommon(); }catch(_){ /* ignore errors during background preview */ }
@@ -450,7 +559,6 @@
 
   const debouncedAutoPreview = debounce(autoPreviewIfPossible, 450);
   if(importUrlInput) importUrlInput.addEventListener('input', ()=> debouncedAutoPreview());
-  if(manualText) manualText.addEventListener('input', ()=> debouncedAutoPreview());
   if(importFileInput) importFileInput.addEventListener('change', ()=> debouncedAutoPreview());
   if(sampleSelect) sampleSelect.addEventListener('change', ()=>{ const key = sampleSelect.value; const url = getSampleUrl(key); if(importUrlInput) importUrlInput.value = url || ''; debouncedAutoPreview(); });
 
