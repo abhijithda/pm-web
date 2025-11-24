@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>pm-web — Plugin Manager UI</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>pm-web — Plugin Manager UI</h1>
+    <p>Add plugin definitions and watch simulated execution progress.</p>
+  </header>
+  
+  <!-- Demo / Samples (moved above import controls) -->
+  <div class="samples-row">
+    <label for="sample-select" style="font-weight:600;margin-right:8px;color:var(--muted)">Demo</label>
+    <select id="sample-select" class="sample-select">
+      <option value="">— choose —</option>
+      <option value="prereboot">Prereboot (JSON)</option>
+      <option value="preupgrade">Preupgrade (YAML)</option>
+    </select>
+  </div>
+
+  <!-- Import toolbar: URL and file; preview controls are on a separate line below -->
+  <div class="import-toolbar">
+    <input id="import-url" type="url" placeholder="https://raw.githubusercontent.com/.../plugins.json" class="import-url-input">
+    <input type="file" id="import-file" accept=".json,.yaml,.yml" class="import-file-input">
+    <button id="import-from-url-btn" type="button">Import</button>
+  </div>
+
+  <div class="preview-row">
+    <button id="preview-btn" type="button">View Details</button>
+  </div>
+
+  <!-- Collapsible preview panel shown above Plugins list -->
+  <div id="global-preview" class="global-preview" style="display:none">
+    <div class="import-preview" id="import-preview" aria-live="polite"></div>
+  </div>
+
+  <main>
+    <section class="form-section">
+      <h2>Add Plugin</h2>
+      <form id="plugin-form">
+        <label>Plugin Name<input id="name" required></label>
+        <label>Description<input id="description"></label>
+        <label>Command<input id="command"></label>
+        <label>Dependencies (comma separated)<input id="dependencies" placeholder="pluginA,pluginB"></label>
+        <div class="form-actions">
+          <button type="submit">Add Plugin</button>
+          <button type="button" id="clear-form">Clear</button>
+        </div>
+      </form>
+      <div class="manual-entry">
+        <label style="display:block;margin-top:12px;color:var(--muted);font-size:13px">Or paste plugin list (JSON or YAML)</label>
+        <textarea id="manual-text" placeholder='[ { "name":"...", "command":"..." } ]' rows="8" style="width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:rgba(255,255,255,0.02);color:inherit"></textarea>
+      </div>
+      
+
+      <div class="import-export">
+        <button id="start-all">Start All</button>
+        <button id="clear-all" type="button">Clear All</button>
+        <button id="stop-all">Stop All</button>
+        <button id="export">Export JSON</button>
+        <button id="export-yaml">Export YAML</button>
+        
+      </div>
+    </section>
+
+    <section class="list-section">
+      <h2>Plugins</h2>
+      <div id="plugins"></div>
+    </section>
+  </main>
+
+  <footer>
+    <small>This is a frontend-only demo that simulates plugin execution for the plugin-manager.</small>
+  </footer>
+
+  <!-- YAML support for importing/exporting plugin lists -->
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
